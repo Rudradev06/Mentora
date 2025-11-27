@@ -303,7 +303,7 @@ const CourseDetailPage = () => {
 
   useEffect(() => {
     fetchCourse();
-  }, [id]);
+  }, [id, user]); // Re-fetch when user changes (after login/enrollment)
 
   const fetchCourse = async () => {
     try {
@@ -354,7 +354,11 @@ const CourseDetailPage = () => {
   if (error) return <div className="p-8 text-center text-red-500">{error}</div>;
   if (!course) return <div className="p-8 text-center">Course not found</div>;
 
-  const isEnrolled = user && course.enrolledStudents.some(studentId => studentId.toString() === user.id.toString());
+  // Handle both ObjectId and populated user objects in enrolledStudents
+  const isEnrolled = user && course.enrolledStudents.some(studentId => {
+    const id = typeof studentId === 'object' ? studentId._id || studentId.id : studentId;
+    return id.toString() === user.id.toString();
+  });
   const isInstructor = user && course.instructor._id.toString() === user.id.toString();
   const canManage = isInstructor || (user && user.role === "admin");
 

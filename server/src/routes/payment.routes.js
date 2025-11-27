@@ -113,6 +113,89 @@ router.post("/create-payment-intent", requireAuth, requireRole("student"), async
   }
 });
 
+// Verify payment and enroll student (for development without webhooks)
+router.post("/verify-payment", requireAuth, requireRole("student"), async (req, res) => {
+  const stripeInstance = getStripe();
+  
+  if (!stripeInstance) {
+    return res.status(503).json({ 
+      message: "Payment service is not configured." 
+    });
+  }
+
+  try {
+    const { paymentIntentId, courseId } = req.body;
+
+    console.log("🔍 Verifying payment:", { paymentIntentId, courseId, userId: req.user.id });
+
+    // Retrieve payment intent from Stripe to verify it succeeded
+    const paymentIntent = await stripeInstance.paymentIntents.retrieve(paymentIntentId);
+    
+    console.log("📋 Payment intent status:", paymentIntent.status);
+
+    if (paymentIntent.status !== "succeeded") {
+      return res.status(400).json({ 
+        message: "Payment has not been completed yet",
+        status: paymentIntent.status 
+      });
+    }
+
+    // Verify the payment intent belongs to this user and course
+    if (paymentIntent.metadata.userId !== req.user.id.toString() ||
+        paymentIntent.metadata.courseId !== courseId) {
+      return res.status(403).json({ message: "Payment verification failed" });
+    }
+
+    // Update payment record
+    const payment = await Payment.findOneAndUpdate(
+      { paymentIntentId: paymentIntentId },
+      {
+        status: "completed",
+        paidAt: new Date(),
+        paymentMethod: paymentIntent.payment_method_types?.[0] || "card"
+      },
+      { new: true }
+    );
+
+    if (!payment) {
+      console.error("❌ Payment record not found:", paymentIntentId);
+      return res.status(404).json({ message: "Payment record not found" });
+    }
+
+    // Enroll student in course
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ message: "Course not found" });
+    }
+
+    // Check if already enrolled
+    const alreadyEnrolled = course.enrolledStudents.some(
+      studentId => studentId.toString() === req.user.id.toString()
+    );
+
+    if (!alreadyEnrolled) {
+      course.enrolledStudents.push(req.user.id);
+      await course.save();
+      console.log("✅ Student enrolled successfully:", { courseId, userId: req.user.id });
+    } else {
+      console.log("ℹ️  Student already enrolled:", { courseId, userId: req.user.id });
+    }
+
+    res.json({ 
+      message: "Payment verified and enrollment completed",
+      enrolled: true,
+      payment: {
+        id: payment._id,
+        status: payment.status,
+        amount: payment.amount
+      }
+    });
+  } catch (err) {
+    console.error("❌ Payment verification error:", err);
+    res.status(500).json({ message: "Failed to verify payment" });
+  }
+});
+
 // Webhook to handle Stripe events
 router.post("/webhook", async (req, res) => {
   // Get Stripe instance

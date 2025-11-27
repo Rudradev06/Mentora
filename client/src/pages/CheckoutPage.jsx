@@ -8,8 +8,16 @@ import { useAuth } from "../context/AuthContext";
 import CheckoutForm from "../components/CheckoutForm";
 import { ShoppingCart, Lock, ArrowLeft, CheckCircle } from "lucide-react";
 
-// Initialize Stripe (replace with your publishable key)
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "pk_test_your_key_here");
+// Initialize Stripe
+const getStripeKey = () => {
+  const key = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+  if (!key) {
+    console.error("VITE_STRIPE_PUBLISHABLE_KEY is not defined in environment variables");
+  }
+  return key;
+};
+
+const stripePromise = loadStripe(getStripeKey());
 
 const CheckoutPage = () => {
   const { id } = useParams();
@@ -45,10 +53,11 @@ const CheckoutPage = () => {
       const courseData = courseResponse.data.course;
       setCourse(courseData);
 
-      // Check if already enrolled
-      const isEnrolled = courseData.enrolledStudents.some(
-        studentId => studentId.toString() === user.id.toString()
-      );
+      // Check if already enrolled (handle both ObjectId and populated objects)
+      const isEnrolled = courseData.enrolledStudents.some(studentId => {
+        const id = typeof studentId === 'object' ? studentId._id || studentId.id : studentId;
+        return id.toString() === user.id.toString();
+      });
 
       if (isEnrolled) {
         setError("You are already enrolled in this course");
@@ -64,10 +73,14 @@ const CheckoutPage = () => {
       }
 
       // Create payment intent
+      console.log("Creating payment intent for course:", id);
       const paymentResponse = await paymentAPI.createPaymentIntent(id);
+      console.log("Payment intent created successfully");
       setClientSecret(paymentResponse.data.clientSecret);
     } catch (err) {
-      setError(err.response?.data?.message || "Failed to initialize checkout");
+      console.error("Checkout error:", err);
+      const errorMessage = err.response?.data?.message || err.message || "Failed to initialize checkout";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -160,7 +173,17 @@ const CheckoutPage = () => {
                 <h2 className="text-xl font-semibold text-gray-900">Secure Payment</h2>
               </div>
 
-              {clientSecret && (
+              {!clientSecret ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                  <p className="text-gray-600">Initializing payment...</p>
+                </div>
+              ) : !getStripeKey() ? (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                  <p className="font-semibold mb-2">Payment Configuration Error</p>
+                  <p className="text-sm">Stripe is not properly configured. Please contact support.</p>
+                </div>
+              ) : (
                 <Elements options={options} stripe={stripePromise}>
                   <CheckoutForm 
                     courseId={id} 

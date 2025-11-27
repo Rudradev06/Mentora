@@ -31,9 +31,12 @@ app.get("/api/debug/env", (_req, res) => {
     nodeEnv: process.env.NODE_ENV || "development"
   });
 });
+import videoRoutes from "./routes/video.routes.js";
+
 app.use("/api/auth", authRoutes);
 app.use("/api/courses", courseRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/payment", paymentRoutes);
+app.use("/api/video", videoRoutes);
 
 export default app;

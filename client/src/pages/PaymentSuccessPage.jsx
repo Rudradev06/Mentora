@@ -2,33 +2,91 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { CheckCircle, Loader2, Play, Download } from "lucide-react";
 import { courseAPI } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 const PaymentSuccessPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [course, setCourse] = useState(null);
   const [error, setError] = useState("");
 
   const courseId = searchParams.get("courseId");
   const paymentIntent = searchParams.get("payment_intent");
+  const paymentIntentClientSecret = searchParams.get("payment_intent_client_secret");
+  const redirectStatus = searchParams.get("redirect_status");
 
   useEffect(() => {
+    // Check for Stripe redirect status
+    if (redirectStatus === "failed") {
+      setError("Payment was not completed. Please try again.");
+      setLoading(false);
+      return;
+    }
+
     if (!courseId || !paymentIntent) {
       setError("Invalid payment confirmation");
       setLoading(false);
       return;
     }
 
-    // Fetch course details
-    fetchCourse();
-  }, [courseId, paymentIntent]);
+    // Only proceed if payment succeeded
+    if (redirectStatus === "succeeded" || paymentIntent) {
+      // Verify payment and enroll student immediately
+      verifyAndEnroll();
+    }
+  }, [courseId, paymentIntent, redirectStatus]);
+
+  const verifyAndEnroll = async () => {
+    try {
+      console.log("🔍 Verifying payment and enrolling...", { courseId, paymentIntent });
+      
+      // Call the verify-payment endpoint to enroll the student
+      const verifyResponse = await fetch(`http://localhost:5000/api/payment/verify-payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          paymentIntentId: paymentIntent,
+          courseId: courseId
+        })
+      });
+
+      if (!verifyResponse.ok) {
+        const errorData = await verifyResponse.json();
+        console.error("❌ Payment verification failed:", errorData);
+        throw new Error(errorData.message || "Payment verification failed");
+      }
+
+      const verifyData = await verifyResponse.json();
+      console.log("✅ Payment verified and enrolled:", verifyData);
+
+      // Now fetch the course to display details
+      await fetchCourse();
+    } catch (err) {
+      console.error("❌ Verification error:", err);
+      setError(err.message || "Failed to verify payment");
+      setLoading(false);
+    }
+  };
 
   const fetchCourse = async () => {
     try {
       const response = await courseAPI.getCourse(courseId);
-      setCourse(response.data.course);
+      const fetchedCourse = response.data.course;
+      
+      console.log("📚 Course fetched:", {
+        title: fetchedCourse.title,
+        enrolledCount: fetchedCourse.enrolledStudents.length,
+        userId: user?.id
+      });
+      
+      setCourse(fetchedCourse);
     } catch (err) {
+      console.error("❌ Failed to fetch course:", err);
       setError("Failed to load course details");
     } finally {
       setLoading(false);
@@ -134,11 +192,10 @@ const PaymentSuccessPage = () => {
                 Start Learning Now
               </Link>
               <Link
-                to="/my-courses"
+                to={`/courses/${courseId}`}
                 className="flex-1 flex items-center justify-center px-6 py-3 bg-gray-100 text-gray-700 font-semibold rounded-lg hover:bg-gray-200 transition-colors"
               >
-                <Download className="w-5 h-5 mr-2" />
-                View My Courses
+                View Course Details
               </Link>
             </div>
 

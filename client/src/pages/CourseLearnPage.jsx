@@ -53,12 +53,25 @@ const CourseLearnPage = () => {
       const response = await courseAPI.getCourse(id);
       const courseData = response.data.course;
       
-      // Check if user has access to the course
-      const hasAccess = courseData.enrolledStudents.some(studentId => studentId.toString() === user.id.toString()) || 
-                       courseData.instructor._id.toString() === user.id.toString() || 
-                       user.role === "admin";
+      // Check if user has access to the course (handle both ObjectId and populated objects)
+      const isEnrolled = courseData.enrolledStudents.some(studentId => {
+        const id = typeof studentId === 'object' ? studentId._id || studentId.id : studentId;
+        return id.toString() === user.id.toString();
+      });
+      
+      const isInstructor = courseData.instructor._id.toString() === user.id.toString();
+      const isAdmin = user.role === "admin";
+      const hasAccess = isEnrolled || isInstructor || isAdmin;
       
       if (!hasAccess) {
+        console.log("Access check failed:", {
+          isEnrolled,
+          isInstructor,
+          isAdmin,
+          userId: user.id,
+          enrolledStudents: courseData.enrolledStudents,
+          instructorId: courseData.instructor._id
+        });
         setError("You are not enrolled in this course");
         return;
       }
