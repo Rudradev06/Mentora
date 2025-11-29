@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { courseAPI } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import CourseAnalytics from "../components/CourseAnalytics";
+import CourseReviews from "../components/CourseReviews";
 import { Edit, BarChart3, Settings, Users, BookOpen } from "lucide-react";
 
 const StudentsList = ({ students, course }) => {
@@ -350,6 +351,36 @@ const CourseDetailPage = () => {
     }
   };
 
+  const handleReviewSubmit = async (reviewData) => {
+    try {
+      await courseAPI.addReview(id, reviewData);
+      alert("Review submitted successfully!");
+      fetchCourse(); // Refresh to show new review
+    } catch (err) {
+      throw new Error(err.response?.data?.message || "Failed to submit review");
+    }
+  };
+
+  const handleReviewUpdate = async (reviewId, reviewData) => {
+    try {
+      await courseAPI.updateReview(id, reviewId, reviewData);
+      alert("Review updated successfully!");
+      fetchCourse(); // Refresh to show updated review
+    } catch (err) {
+      throw new Error(err.response?.data?.message || "Failed to update review");
+    }
+  };
+
+  const handleReviewDelete = async (reviewId) => {
+    try {
+      await courseAPI.deleteReview(id, reviewId);
+      alert("Review deleted successfully!");
+      fetchCourse(); // Refresh to remove deleted review
+    } catch (err) {
+      throw new Error(err.response?.data?.message || "Failed to delete review");
+    }
+  };
+
   if (loading) return <div className="p-8 text-center">Loading course...</div>;
   if (error) return <div className="p-8 text-center text-red-500">{error}</div>;
   if (!course) return <div className="p-8 text-center">Course not found</div>;
@@ -607,37 +638,14 @@ const CourseDetailPage = () => {
         )}
 
         {/* Reviews */}
-        <div className="bg-white rounded-lg shadow-md p-8">
-          <h2 className="text-2xl font-semibold mb-6">Reviews</h2>
-          {course.reviews.length === 0 ? (
-            <p className="text-gray-500">No reviews yet.</p>
-          ) : (
-            <div className="space-y-6">
-              {course.reviews.map((review, index) => (
-                <div key={index} className="border-b border-gray-200 pb-4">
-                  <div className="flex items-center mb-2">
-                    <div className="font-semibold">{review.user.name}</div>
-                    <div className="flex items-center ml-4">
-                      {[...Array(5)].map((_, i) => (
-                        <span
-                          key={i}
-                          className={`text-lg ${i < review.rating ? "text-yellow-500" : "text-gray-300"
-                            }`}
-                        >
-                          ★
-                        </span>
-                      ))}
-                    </div>
-                    <div className="text-sm text-gray-500 ml-4">
-                      {new Date(review.createdAt).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <p className="text-gray-700">{review.comment}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <CourseReviews
+          course={course}
+          user={user}
+          isEnrolled={isEnrolled}
+          onReviewSubmit={handleReviewSubmit}
+          onReviewUpdate={handleReviewUpdate}
+          onReviewDelete={handleReviewDelete}
+        />
       </div>
     </div>
   );

@@ -1,6 +1,33 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
+import { statsAPI } from "../services/api";
 
 const Footer = () => {
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    averageRating: 0,
+    uptime: "99.9%"
+  });
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  const fetchStats = async () => {
+    try {
+      const response = await statsAPI.getPlatformStats();
+      const { stats: platformStats } = response.data;
+
+      setStats({
+        totalUsers: platformStats.users.total || 0,
+        averageRating: platformStats.courses.averageRating || 0,
+        uptime: "99.9%"
+      });
+    } catch (error) {
+      console.error("Failed to fetch footer stats:", error);
+      // Keep default values
+    }
+  };
+
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -50,10 +77,10 @@ const Footer = () => {
     },
   ];
 
-  const stats = [
-    { icon: "👥", value: "50K+", label: "Users" },
-    { icon: "⭐", value: "4.9", label: "Rating" },
-    { icon: "🛡️", value: "99.9%", label: "Uptime" },
+  const displayStats = [
+    { icon: "👥", value: `${(stats.totalUsers / 1000).toFixed(0)}K+`, label: "Users" },
+    { icon: "⭐", value: stats.averageRating.toFixed(1), label: "Rating" },
+    { icon: "🛡️", value: stats.uptime, label: "Uptime" },
   ];
 
   return (
@@ -69,7 +96,7 @@ const Footer = () => {
         <div className="border-b border-gray-700/50 py-6 px-6">
           <div className="max-w-6xl mx-auto">
             <div className="flex justify-center space-x-8">
-              {stats.map((stat, index) => (
+              {displayStats.map((stat, index) => (
                 <div key={index} className="text-center">
                   <div className="inline-flex items-center justify-center w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg mb-2">
                     <span className="text-sm">{stat.icon}</span>

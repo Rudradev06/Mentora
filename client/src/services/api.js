@@ -46,13 +46,21 @@ export const courseAPI = {
   enrollInCourse: (id) => api.post(`/courses/${id}/enroll`),
   getEnrolledCourses: () => api.get("/courses/enrolled/my-courses"),
   getCreatedCourses: () => api.get("/courses/my-courses/created"),
-  addReview: (id, reviewData) => api.post(`/courses/${id}/review`, reviewData),
+  addReview: (id, reviewData) => api.post(`/courses/${id}/reviews`, reviewData),
+  updateReview: (courseId, reviewId, reviewData) => api.put(`/courses/${courseId}/reviews/${reviewId}`, reviewData),
+  deleteReview: (courseId, reviewId) => api.delete(`/courses/${courseId}/reviews/${reviewId}`),
 };
 
 // Stats API
 export const statsAPI = {
   getPlatformStats: () => api.get("/stats"),
   getTrendingCourses: () => api.get("/stats/trending"),
+};
+
+// Analytics API
+export const analyticsAPI = {
+  getCourseAnalytics: (courseId) => api.get(`/analytics/course/${courseId}`),
+  getInstructorDashboard: () => api.get("/analytics/instructor/dashboard"),
 };
 
 export default api;

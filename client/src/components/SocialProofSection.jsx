@@ -1,40 +1,4 @@
-import { useState, useEffect } from "react";
-import { statsAPI } from "../services/api";
-
 const SocialProofSection = () => {
-  const [stats, setStats] = useState({
-    totalCourses: 0,
-    totalStudents: 0,
-    totalInstructors: 0,
-    averageRating: 0
-  });
-
-  useEffect(() => {
-    fetchStats();
-  }, []);
-
-  const fetchStats = async () => {
-    try {
-      const response = await statsAPI.getPlatformStats();
-      const { stats: platformStats } = response.data;
-
-      setStats({
-        totalCourses: platformStats.courses.total,
-        totalStudents: platformStats.courses.totalEnrollments,
-        totalInstructors: platformStats.users.instructors,
-        averageRating: platformStats.courses.averageRating
-      });
-    } catch (error) {
-      console.error("Failed to fetch stats:", error);
-      // Fallback to default values
-      setStats({
-        totalCourses: 0,
-        totalStudents: 0,
-        totalInstructors: 0,
-        averageRating: 0
-      });
-    }
-  };
 
   const companies = [
     { name: "Microsoft", logo: "🏢", color: "from-blue-500 to-cyan-500" },
@@ -122,7 +86,7 @@ const SocialProofSection = () => {
             </span>
           </h2>
 
-          <p className="max-w-3xl mx-auto text-xl text-blue-100 mb-8 leading-relaxed font-light">
+          <p className="max-w-3xl mx-auto text-xl text-blue-100 mb-16 leading-relaxed font-light">
             Join the ranks of{" "}
             <span className="font-semibold text-white">
               Fortune 500 companies
@@ -134,42 +98,6 @@ const SocialProofSection = () => {
             </span>{" "}
             who trust Mentora to transform their learning experiences.
           </p>
-
-          {/* Stats Display */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-16">
-            <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-white mb-2">
-                {stats.totalStudents.toLocaleString()}+
-              </div>
-              <div className="text-blue-200 text-sm uppercase tracking-wider">
-                Students Learning
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-white mb-2">
-                {stats.totalCourses}+
-              </div>
-              <div className="text-blue-200 text-sm uppercase tracking-wider">
-                Courses Available
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-white mb-2">
-                {stats.totalInstructors}+
-              </div>
-              <div className="text-blue-200 text-sm uppercase tracking-wider">
-                Expert Instructors
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl md:text-4xl font-bold text-white mb-2">
-                {stats.averageRating.toFixed(1)}★
-              </div>
-              <div className="text-blue-200 text-sm uppercase tracking-wider">
-                Average Rating
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Company Logos */}

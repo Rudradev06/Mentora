@@ -3,6 +3,7 @@ import LandingPage from "./pages/LandingPage";
 import CoursesPage from "./pages/CoursesPage";
 import CourseDetailPage from "./pages/CourseDetailPage";
 import CourseLearnPage from "./pages/CourseLearnPage";
+import CourseQuizPage from "./pages/CourseQuizPage";
 import MyCoursesPage from "./pages/MyCoursesPage";
 import BlogPage from "./pages/BlogPage";
 import BlogPostPage from "./pages/BlogPostPage";
@@ -14,19 +15,25 @@ import DashboardPage from "./pages/DashboardPage";
 import CheckoutPage from "./pages/CheckoutPage";
 import PaymentSuccessPage from "./pages/PaymentSuccessPage";
 import PaymentHistoryPage from "./pages/PaymentHistoryPage";
+import ProfilePage from "./pages/ProfilePage";
 import PageNotFound from "./pages/PageNotFound";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
+import Chatbot from "./components/Chatbot";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 export default function App() {
   const location = useLocation();
   const hideNavAndFooter = ["/login", "/register"].includes(location.pathname) || 
-                          location.pathname.includes("/learn");
+                          location.pathname.includes("/learn") ||
+                          location.pathname.includes("/quiz");
 
   return (
     <div className="min-h-screen flex flex-col">
       {!hideNavAndFooter && <Navbar />}
+      
+      {/* Chatbot - Available on all pages */}
+      <Chatbot />
       
       <main className={`flex-grow ${!hideNavAndFooter ? "pt-16" : ""}`}>
         <Routes>
@@ -40,6 +47,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <CourseLearnPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/courses/:id/quiz" 
+            element={
+              <ProtectedRoute>
+                <CourseQuizPage />
               </ProtectedRoute>
             } 
           />
@@ -98,6 +113,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <PaymentHistoryPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/profile" 
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
               </ProtectedRoute>
             } 
           />

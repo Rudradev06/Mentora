@@ -172,7 +172,7 @@ router.get("/my-courses/created", requireAuth, requireRole("teacher", "admin"), 
 });
 
 // Add review to course
-router.post("/:id/review", requireAuth, requireRole("student"), async (req, res) => {
+router.post("/:id/reviews", requireAuth, requireRole("student"), async (req, res) => {
   try {
     const { rating, comment } = req.body;
     const course = await Course.findById(req.params.id);
@@ -182,8 +182,12 @@ router.post("/:id/review", requireAuth, requireRole("student"), async (req, res)
     }
 
     // Check if student is enrolled
-    if (!course.enrolledStudents.includes(req.user.id)) {
-      return res.status(403).json({ message: "Must be enrolled to review" });
+    const isEnrolled = course.enrolledStudents.some(studentId => 
+      studentId.toString() === req.user.id.toString()
+    );
+
+    if (!isEnrolled) {
+      return res.status(403).json({ message: "You must be enrolled in this course to write a review" });
     }
 
     // Check if user already reviewed
@@ -209,6 +213,81 @@ router.post("/:id/review", requireAuth, requireRole("student"), async (req, res)
     await course.populate("reviews.user", "name");
 
     res.json({ message: "Review added successfully", course });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Update review
+router.put("/:courseId/reviews/:reviewId", requireAuth, async (req, res) => {
+  try {
+    const { rating, comment } = req.body;
+    const course = await Course.findById(req.params.courseId);
+    
+    if (!course) {
+      return res.status(404).json({ message: "Course not found" });
+    }
+
+    const review = course.reviews.id(req.params.reviewId);
+    
+    if (!review) {
+      return res.status(404).json({ message: "Review not found" });
+    }
+
+    // Check if user owns the review
+    if (review.user.toString() !== req.user.id) {
+      return res.status(403).json({ message: "Not authorized to update this review" });
+    }
+
+    review.rating = rating;
+    review.comment = comment;
+
+    // Update average rating
+    const totalRating = course.reviews.reduce((sum, review) => sum + review.rating, 0);
+    course.rating = totalRating / course.reviews.length;
+
+    await course.save();
+    await course.populate("reviews.user", "name");
+
+    res.json({ message: "Review updated successfully", course });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Delete review
+router.delete("/:courseId/reviews/:reviewId", requireAuth, async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.courseId);
+    
+    if (!course) {
+      return res.status(404).json({ message: "Course not found" });
+    }
+
+    const review = course.reviews.id(req.params.reviewId);
+    
+    if (!review) {
+      return res.status(404).json({ message: "Review not found" });
+    }
+
+    // Check if user owns the review or is admin
+    if (review.user.toString() !== req.user.id && req.user.role !== "admin") {
+      return res.status(403).json({ message: "Not authorized to delete this review" });
+    }
+
+    course.reviews.pull(req.params.reviewId);
+
+    // Update average rating
+    if (course.reviews.length > 0) {
+      const totalRating = course.reviews.reduce((sum, review) => sum + review.rating, 0);
+      course.rating = totalRating / course.reviews.length;
+    } else {
+      course.rating = 0;
+    }
+
+    await course.save();
+
+    res.json({ message: "Review deleted successfully" });
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }

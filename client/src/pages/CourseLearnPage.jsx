@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { courseAPI } from "../services/api";
 import { useAuth } from "../context/AuthContext";
@@ -12,15 +12,14 @@ import {
   ArrowLeft,
   Menu,
   X,
+  XCircle,
   Clock,
   FileText,
   Video,
-  Maximize,
-  Minimize,
-  Volume2,
   MessageSquare,
   Lightbulb,
-  Target
+  Target,
+  Minimize
 } from "lucide-react";
 
 const CourseLearnPage = () => {
@@ -35,13 +34,14 @@ const CourseLearnPage = () => {
   const [completedLessons, setCompletedLessons] = useState(new Set());
   const [showNotes, setShowNotes] = useState(false);
   const [notes, setNotes] = useState("");
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [volume, setVolume] = useState(1);
   const [focusMode, setFocusMode] = useState(false);
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState(false);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [certificateGenerated, setCertificateGenerated] = useState(false);
+  
+  const videoElementRef = useRef(null);
 
   useEffect(() => {
     fetchCourse();
@@ -82,8 +82,18 @@ const CourseLearnPage = () => {
       const savedProgress = localStorage.getItem(`course_${id}_progress`);
       if (savedProgress) {
         const progress = JSON.parse(savedProgress);
-        setCompletedLessons(new Set(progress.completedLessons));
+        const completed = new Set(progress.completedLessons);
+        setCompletedLessons(completed);
         setCurrentLessonIndex(progress.currentLesson || 0);
+        
+        // Check if course was already completed
+        if (completed.size === courseData.content.length) {
+          // Check if certificate was already generated
+          const certificate = localStorage.getItem(`certificate_${id}`);
+          if (certificate) {
+            setCertificateGenerated(true);
+          }
+        }
       }
     } catch (err) {
       setError(err.response?.data?.message || "Failed to fetch course");
@@ -103,6 +113,86 @@ const CourseLearnPage = () => {
       currentLesson: currentLessonIndex
     };
     localStorage.setItem(`course_${id}_progress`, JSON.stringify(progress));
+
+    // Check if all lessons are completed
+    if (newCompleted.size === course.content.length) {
+      setShowCompletionModal(true);
+    }
+  };
+
+  const handleStartQuiz = () => {
+    // Navigate to quiz page
+    navigate(`/courses/${id}/quiz`);
+  };
+
+  const handleViewCertificate = () => {
+    // Check if quiz was passed
+    const quizResult = localStorage.getItem(`quiz_result_${id}`);
+    if (!quizResult) {
+      alert("You must complete and pass the quiz before getting your certificate!");
+      return;
+    }
+
+    const result = JSON.parse(quizResult);
+    if (!result.passed) {
+      alert("You must pass the quiz (70% or higher) to get your certificate!");
+      return;
+    }
+
+    // Generate and download certificate
+    const certificateData = {
+      courseName: course.title,
+      studentName: user.name,
+      completionDate: new Date().toLocaleDateString(),
+      courseId: id,
+      instructor: course.instructor.name,
+      quizScore: result.score
+    };
+    
+    localStorage.setItem(`certificate_${id}`, JSON.stringify(certificateData));
+    setCertificateGenerated(true);
+    
+    // Download certificate
+    const certificateText = `
+╔════════════════════════════════════════════════════════════╗
+║                                                            ║
+║              CERTIFICATE OF COMPLETION                     ║
+║                                                            ║
+╚════════════════════════════════════════════════════════════╝
+
+                    This certifies that
+
+                      ${user.name}
+
+        has successfully completed the course
+
+                    ${course.title}
+
+                 with a quiz score of ${result.score}%
+
+
+Instructor: ${course.instructor.name}
+Date: ${new Date().toLocaleDateString()}
+Course ID: ${id}
+
+This certificate verifies that the student has:
+✓ Completed all ${course.content.length} lessons
+✓ Passed the final quiz with ${result.score}%
+✓ Demonstrated understanding of course material
+
+────────────────────────────────────────────────────────────
+                    Mentora Learning Platform
+    `;
+    
+    const blob = new Blob([certificateText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${course.title.replace(/\s+/g, '_')}_Certificate.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const goToNextLesson = () => {
@@ -110,6 +200,13 @@ const CourseLearnPage = () => {
       setCurrentLessonIndex(currentLessonIndex + 1);
       setVideoLoading(false);
       setVideoError(false);
+      
+      // Save current lesson progress
+      const progress = {
+        completedLessons: Array.from(completedLessons),
+        currentLesson: currentLessonIndex + 1
+      };
+      localStorage.setItem(`course_${id}_progress`, JSON.stringify(progress));
     }
   };
 
@@ -125,6 +222,8 @@ const CourseLearnPage = () => {
     if (!course || course.content.length === 0) return 0;
     return Math.round((completedLessons.size / course.content.length) * 100);
   };
+
+
 
   if (loading) {
     return (
@@ -177,7 +276,7 @@ const CourseLearnPage = () => {
   const progress = calculateProgress();
 
   return (
-    <div className={`min-h-screen ${focusMode ? 'bg-black' : 'bg-gray-900'} text-white transition-colors duration-300`}>
+    <div className={`h-screen flex flex-col ${focusMode ? 'bg-black' : 'bg-gray-900'} text-white transition-colors duration-300`}>
       {/* Header */}
       {!focusMode && (
         <div className="bg-gray-800 border-b border-gray-700 px-6 py-4">
@@ -199,15 +298,36 @@ const CourseLearnPage = () => {
             </div>
 
             <div className="flex items-center space-x-4">
-              <div className="hidden md:flex items-center space-x-2">
+              <div className="hidden md:flex items-center space-x-3">
+                <div className="text-sm text-gray-400">
+                  {completedLessons.size}/{course.content.length} completed
+                </div>
                 <div className="w-32 bg-gray-700 rounded-full h-2">
                   <div
-                    className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                    className={`h-2 rounded-full transition-all duration-300 ${
+                      progress === 100 ? 'bg-gradient-to-r from-green-400 to-emerald-500' : 'bg-blue-500'
+                    }`}
                     style={{ width: `${progress}%` }}
                   ></div>
                 </div>
-                <span className="text-sm text-gray-300">{progress}%</span>
+                <span className={`text-sm font-semibold ${progress === 100 ? 'text-green-400' : 'text-gray-300'}`}>
+                  {progress}%
+                </span>
+                {progress === 100 && (
+                  <CheckCircle className="w-5 h-5 text-green-400 animate-pulse" />
+                )}
               </div>
+              
+              {!completedLessons.has(currentLessonIndex) && (
+                <button
+                  onClick={() => markLessonComplete(currentLessonIndex)}
+                  className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  title="Mark Lesson Complete"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  <span className="text-sm font-medium">Mark Complete</span>
+                </button>
+              )}
               
               <button
                 onClick={() => setFocusMode(!focusMode)}
@@ -228,16 +348,37 @@ const CourseLearnPage = () => {
         </div>
       )}
 
-      <div className="flex h-screen">
+      <div className="flex flex-1">
         {/* Sidebar - Course Content */}
         {!focusMode && (
           <div className={`${sidebarOpen ? 'w-80' : 'w-0'} transition-all duration-300 bg-gray-800 border-r border-gray-700 overflow-hidden`}>
             <div className="p-4 h-full overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">Course Content</h2>
-                <div className="text-sm text-gray-400">
-                  {completedLessons.size}/{course.content.length} completed
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-lg font-semibold">Course Content</h2>
+                  <div className={`text-sm font-semibold ${
+                    completedLessons.size === course.content.length ? 'text-green-400' : 'text-gray-400'
+                  }`}>
+                    {completedLessons.size}/{course.content.length}
+                  </div>
                 </div>
+                {/* Progress Bar */}
+                <div className="w-full bg-gray-700 rounded-full h-2 mb-2">
+                  <div
+                    className={`h-2 rounded-full transition-all duration-500 ${
+                      calculateProgress() === 100 
+                        ? 'bg-gradient-to-r from-green-400 to-emerald-500' 
+                        : 'bg-blue-500'
+                    }`}
+                    style={{ width: `${calculateProgress()}%` }}
+                  ></div>
+                </div>
+                {completedLessons.size === course.content.length && (
+                  <div className="text-xs text-green-400 flex items-center">
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Course Completed!
+                  </div>
+                )}
               </div>
               
               <div className="space-y-2">
@@ -292,89 +433,37 @@ const CourseLearnPage = () => {
             </div>
           )}
 
-          {/* Lesson Content */}
-          <div className="flex-1 overflow-y-auto">
-            <div className={`${focusMode ? 'max-w-6xl' : 'max-w-4xl'} mx-auto p-6`}>
-              {/* Lesson Header */}
-              <div className="mb-8">
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h1 className={`${focusMode ? 'text-3xl' : 'text-2xl'} font-bold text-white mb-2`}>
-                      {currentLesson.title}
-                    </h1>
-                    <div className="flex items-center space-x-4 text-gray-400">
-                      <span className="flex items-center">
-                        <Clock className="w-4 h-4 mr-1" />
-                        {currentLesson.duration || "5 min"}
-                      </span>
-                      <span>Lesson {currentLessonIndex + 1} of {course.content.length}</span>
-                    </div>
-                  </div>
-                  
-                  {!focusMode && (
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => setShowTranscript(!showTranscript)}
-                        className={`px-3 py-2 rounded-md transition-colors ${
-                          showTranscript ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                        }`}
-                      >
-                        <MessageSquare className="w-4 h-4 mr-2 inline" />
-                        Transcript
-                      </button>
-                      <button
-                        onClick={() => setShowNotes(!showNotes)}
-                        className={`px-3 py-2 rounded-md transition-colors ${
-                          showNotes ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                        }`}
-                      >
-                        <FileText className="w-4 h-4 mr-2 inline" />
-                        Notes
-                      </button>
-                      {!completedLessons.has(currentLessonIndex) && (
-                        <button
-                          onClick={() => markLessonComplete(currentLessonIndex)}
-                          className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
-                        >
-                          <CheckCircle className="w-4 h-4 mr-2 inline" />
-                          Mark Complete
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-                
-                {!focusMode && (
-                  <p className="text-gray-300 text-lg leading-relaxed">
-                    {currentLesson.description}
-                  </p>
-                )}
-              </div>
-
-              {/* Video Player */}
-              {currentLesson.videoUrl ? (
-                <div className="mb-8">
-                  <div className="bg-black rounded-lg overflow-hidden shadow-2xl">
-                    <div className="relative">
-                      <video
-                        controls
-                        className="w-full aspect-video"
-                        src={currentLesson.videoUrl}
-                        onError={(e) => {
-                          console.error("Video loading error:", e);
-                          setVideoError(true);
-                          setVideoLoading(false);
-                        }}
-                        onLoadStart={() => {
-                          setVideoLoading(true);
-                          setVideoError(false);
-                        }}
-                        onCanPlay={() => {
-                          setVideoLoading(false);
-                          setVideoError(false);
-                        }}
-                        preload="metadata"
-                      >
+          {/* Video Player - Full Height */}
+          <div className="flex-1 flex items-center justify-center bg-black relative">
+            {currentLesson.videoUrl ? (
+              <div className="w-full h-full flex items-center justify-center px-20">
+                <div className="relative w-full h-full">
+                  <video
+                    ref={videoElementRef}
+                    controls
+                    className="w-full h-full object-contain"
+                    src={currentLesson.videoUrl}
+                    onError={(e) => {
+                      console.error("Video loading error:", e);
+                      setVideoError(true);
+                      setVideoLoading(false);
+                    }}
+                    onLoadStart={() => {
+                      setVideoLoading(true);
+                      setVideoError(false);
+                    }}
+                    onCanPlay={() => {
+                      setVideoLoading(false);
+                      setVideoError(false);
+                    }}
+                    onEnded={() => {
+                      // Auto-mark lesson as complete when video ends
+                      if (!completedLessons.has(currentLessonIndex)) {
+                        markLessonComplete(currentLessonIndex);
+                      }
+                    }}
+                    preload="metadata"
+                  >
                         <source src={currentLesson.videoUrl} type="video/mp4" />
                         <source src={currentLesson.videoUrl} type="video/webm" />
                         <source src={currentLesson.videoUrl} type="video/ogg" />
@@ -413,221 +502,184 @@ const CourseLearnPage = () => {
                             Retry
                           </button>
                         </div>
-                      )}
-                      
-                      {/* Video Controls Overlay */}
-                      <div className="absolute bottom-4 right-4 flex items-center space-x-2">
-                        <button
-                          onClick={() => setIsFullscreen(!isFullscreen)}
-                          className="p-2 bg-black/50 backdrop-blur-sm text-white rounded hover:bg-black/70 transition-colors"
-                        >
-                          {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
-                        </button>
-                        <div className="flex items-center space-x-2 bg-black/50 backdrop-blur-sm rounded px-3 py-2">
-                          <Volume2 className="w-4 h-4 text-white" />
-                          <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.1"
-                            value={volume}
-                            onChange={(e) => setVolume(e.target.value)}
-                            className="w-16"
-                          />
-                        </div>
-                        <select
-                          value={playbackSpeed}
-                          onChange={(e) => setPlaybackSpeed(e.target.value)}
-                          className="bg-black/50 backdrop-blur-sm text-white rounded px-2 py-1 text-sm"
-                        >
-                          <option value="0.5">0.5x</option>
-                          <option value="0.75">0.75x</option>
-                          <option value="1">1x</option>
-                          <option value="1.25">1.25x</option>
-                          <option value="1.5">1.5x</option>
-                          <option value="2">2x</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
+                  )}
                 </div>
-              ) : (
-                <div className="mb-8">
-                  <div className="bg-gray-800 rounded-lg p-12 text-center">
-                    <Video className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-white mb-2">No Video Available</h3>
-                    <p className="text-gray-400">
-                      This lesson doesn't have a video component. Please refer to the lesson materials and content below.
-                    </p>
-                  </div>
-                </div>
-              )}
 
-              {/* Content Sections */}
-              {!focusMode && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  {/* Main Content */}
-                  <div className="lg:col-span-2 space-y-8">
-                    {/* Key Concepts */}
-                    <div className="bg-gradient-to-br from-blue-900/30 to-purple-900/30 rounded-xl p-6 border border-blue-500/20">
-                      <div className="flex items-center mb-4">
-                        <Lightbulb className="w-6 h-6 text-yellow-400 mr-3" />
-                        <h3 className="text-xl font-semibold text-white">Key Concepts</h3>
-                      </div>
-                      <ul className="space-y-3 text-gray-300">
-                        <li className="flex items-start">
-                          <div className="w-2 h-2 bg-blue-400 rounded-full mt-2 mr-3 flex-shrink-0"></div>
-                          <span>Understanding the fundamentals of this topic</span>
-                        </li>
-                        <li className="flex items-start">
-                          <div className="w-2 h-2 bg-blue-400 rounded-full mt-2 mr-3 flex-shrink-0"></div>
-                          <span>Practical applications and real-world examples</span>
-                        </li>
-                        <li className="flex items-start">
-                          <div className="w-2 h-2 bg-blue-400 rounded-full mt-2 mr-3 flex-shrink-0"></div>
-                          <span>Best practices and common pitfalls to avoid</span>
-                        </li>
-                      </ul>
-                    </div>
+                {/* Navigation Buttons Overlay */}
+                {/* Previous Button */}
+                <button
+                  onClick={goToPreviousLesson}
+                  disabled={currentLessonIndex === 0}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 p-4 bg-gray-900/80 backdrop-blur-sm text-white rounded-full hover:bg-gray-800/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:scale-110 z-10"
+                  aria-label="Previous Lesson"
+                >
+                  <SkipBack className="w-6 h-6" />
+                </button>
 
-                    {/* Transcript */}
-                    {showTranscript && (
-                      <div className="bg-gray-800 rounded-xl p-6">
-                        <h3 className="text-lg font-semibold mb-4 text-white">Transcript</h3>
-                        <div className="text-gray-300 leading-relaxed space-y-4 max-h-96 overflow-y-auto">
-                          <p>Welcome to this lesson on {currentLesson.title}. In this video, we'll explore the key concepts and practical applications...</p>
-                          <p>First, let's understand the fundamental principles that govern this topic. These concepts are essential for building a solid foundation...</p>
-                          <p>Now, let's look at some real-world examples to see how these principles apply in practice...</p>
-                        </div>
-                      </div>
-                    )}
 
-                    {/* Lesson Materials */}
-                    {currentLesson.materials && currentLesson.materials.length > 0 && (
-                      <div className="bg-gray-800 rounded-xl p-6">
-                        <h3 className="text-lg font-semibold mb-4 text-white">Lesson Materials</h3>
-                        <div className="space-y-3">
-                          {currentLesson.materials.map((material, index) => (
-                            <a
-                              key={index}
-                              href={material}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center p-4 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors group"
-                            >
-                              <Download className="w-5 h-5 text-blue-400 mr-3 group-hover:text-blue-300" />
-                              <div>
-                                <div className="font-medium text-white">Resource {index + 1}</div>
-                                <div className="text-sm text-gray-400">Click to download</div>
-                              </div>
-                            </a>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
 
-                  {/* Sidebar Content */}
-                  <div className="space-y-6">
-                    {/* Notes Section */}
-                    {showNotes && (
-                      <div className="bg-gray-800 rounded-xl p-6">
-                        <h3 className="text-lg font-semibold mb-4 text-white">My Notes</h3>
-                        <textarea
-                          value={notes}
-                          onChange={(e) => setNotes(e.target.value)}
-                          placeholder="Take notes about this lesson..."
-                          rows={8}
-                          className="w-full bg-gray-700 text-white border border-gray-600 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                        />
-                        <div className="flex justify-end mt-3">
-                          <button
-                            onClick={(event) => {
-                              localStorage.setItem(`course_${id}_lesson_${currentLessonIndex}_notes`, notes);
-                              // Show success message
-                              const btn = event.target;
-                              const originalText = btn.textContent;
-                              btn.textContent = "Saved!";
-                              btn.className = btn.className.replace("bg-blue-600 hover:bg-blue-700", "bg-green-600");
-                              setTimeout(() => {
-                                btn.textContent = originalText;
-                                btn.className = btn.className.replace("bg-green-600", "bg-blue-600 hover:bg-blue-700");
-                              }, 2000);
-                            }}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                          >
-                            Save Notes
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Progress Card */}
-                    <div className="bg-gradient-to-br from-green-900/30 to-blue-900/30 rounded-xl p-6 border border-green-500/20">
-                      <h3 className="text-lg font-semibold mb-4 text-white">Your Progress</h3>
-                      <div className="space-y-4">
-                        <div>
-                          <div className="flex justify-between text-sm text-gray-300 mb-2">
-                            <span>Course Progress</span>
-                            <span>{progress}%</span>
-                          </div>
-                          <div className="w-full bg-gray-700 rounded-full h-2">
-                            <div
-                              className="bg-gradient-to-r from-green-400 to-blue-500 h-2 rounded-full transition-all duration-500"
-                              style={{ width: `${progress}%` }}
-                            ></div>
-                          </div>
-                        </div>
-                        <div className="text-sm text-gray-300">
-                          <p>{completedLessons.size} of {course.content.length} lessons completed</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+                {/* Next Button */}
+                <button
+                  onClick={goToNextLesson}
+                  disabled={currentLessonIndex === course.content.length - 1}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 p-4 bg-gray-900/80 backdrop-blur-sm text-white rounded-full hover:bg-gray-800/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:scale-110 z-10"
+                  aria-label="Next Lesson"
+                >
+                  <SkipForward className="w-6 h-6" />
+                </button>
+              </div>
+            ) : (
+              <div className="bg-gray-800 rounded-lg p-12 text-center">
+                <Video className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-white mb-2">No Video Available</h3>
+                <p className="text-gray-400">
+                  This lesson doesn't have a video component.
+                </p>
+              </div>
+            )}
           </div>
 
-          {/* Navigation Controls */}
-          <div className={`${focusMode ? 'bg-black/80 backdrop-blur-sm' : 'bg-gray-800'} border-t border-gray-700 px-6 py-4`}>
-            <div className="flex items-center justify-between max-w-6xl mx-auto">
-              <button
-                onClick={goToPreviousLesson}
-                disabled={currentLessonIndex === 0}
-                className="flex items-center px-6 py-3 bg-gray-700 text-white rounded-lg hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <SkipBack className="w-4 h-4 mr-2" />
-                Previous Lesson
-              </button>
 
-              <div className="flex items-center space-x-6">
-                <div className="text-sm text-gray-400">
-                  {currentLessonIndex + 1} / {course.content.length}
-                </div>
-                <div className="w-64 bg-gray-700 rounded-full h-2">
-                  <div
-                    className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${((currentLessonIndex + 1) / course.content.length) * 100}%` }}
-                  ></div>
-                </div>
-                <div className="text-sm text-gray-400">
-                  {Math.round(((currentLessonIndex + 1) / course.content.length) * 100)}%
+        </div>
+      </div>
+
+      {/* Floating Take Quiz Button - Bottom Left */}
+      {completedLessons.size === course.content.length && (
+        <button
+          onClick={handleStartQuiz}
+          className="fixed bottom-6 left-6 z-40 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-full shadow-2xl hover:shadow-3xl transition-all duration-300 flex items-center space-x-2 hover:scale-105 font-semibold"
+        >
+          <FileText className="w-5 h-5" />
+          <span>Take Quiz</span>
+        </button>
+      )}
+
+      {/* Course Completion Modal */}
+      {showCompletionModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl max-w-2xl w-full p-8 shadow-2xl border border-gray-700">
+            <div className="text-center">
+              {/* Celebration Icon */}
+              <div className="mb-6">
+                <div className="w-24 h-24 bg-gradient-to-br from-green-400 to-blue-500 rounded-full flex items-center justify-center mx-auto animate-bounce">
+                  <CheckCircle className="w-16 h-16 text-white" />
                 </div>
               </div>
 
-              <button
-                onClick={goToNextLesson}
-                disabled={currentLessonIndex === course.content.length - 1}
-                className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Next Lesson
-                <SkipForward className="w-4 h-4 ml-2" />
-              </button>
+              {/* Congratulations Message */}
+              <h2 className="text-4xl font-bold text-white mb-4">
+                🎉 Congratulations! 🎉
+              </h2>
+              <p className="text-xl text-gray-300 mb-2">
+                You've completed all lessons in
+              </p>
+              <p className="text-2xl font-semibold text-blue-400 mb-6">
+                {course.title}
+              </p>
+
+              {/* Progress Stats */}
+              <div className="bg-gray-800/50 rounded-xl p-6 mb-8">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <div className="text-3xl font-bold text-green-400">
+                      {course.content.length}
+                    </div>
+                    <div className="text-sm text-gray-400">Lessons Completed</div>
+                  </div>
+                  <div>
+                    <div className="text-3xl font-bold text-blue-400">100%</div>
+                    <div className="text-sm text-gray-400">Course Progress</div>
+                  </div>
+                  <div>
+                    <div className="text-3xl font-bold text-purple-400">
+                      {course.duration || "N/A"}
+                    </div>
+                    <div className="text-sm text-gray-400">Total Duration</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Next Steps */}
+              <div className="space-y-4">
+                <p className="text-gray-300 mb-6">
+                  Complete the quiz to earn your certificate!
+                </p>
+
+                {/* Check if quiz was completed */}
+                {(() => {
+                  const quizResult = localStorage.getItem(`quiz_result_${id}`);
+                  const quizData = quizResult ? JSON.parse(quizResult) : null;
+                  const quizPassed = quizData?.passed;
+
+                  return (
+                    <div className="space-y-4">
+                      {/* Quiz Button */}
+                      {!quizPassed && (
+                        <button
+                          onClick={handleStartQuiz}
+                          className="w-full flex items-center justify-center px-6 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all font-semibold shadow-lg hover:shadow-xl"
+                        >
+                          <FileText className="w-5 h-5 mr-2" />
+                          {quizData ? "Retake Quiz" : "Take Quiz Test"}
+                        </button>
+                      )}
+
+                      {/* Quiz Status */}
+                      {quizData && (
+                        <div className={`p-4 rounded-xl ${
+                          quizPassed 
+                            ? 'bg-green-900/30 border border-green-500/30' 
+                            : 'bg-red-900/30 border border-red-500/30'
+                        }`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                              {quizPassed ? (
+                                <CheckCircle className="w-5 h-5 text-green-400" />
+                              ) : (
+                                <XCircle className="w-5 h-5 text-red-400" />
+                              )}
+                              <span className={quizPassed ? 'text-green-400' : 'text-red-400'}>
+                                Quiz Score: {quizData.score}%
+                              </span>
+                            </div>
+                            {quizPassed && (
+                              <span className="text-green-400 text-sm">✓ Passed</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Certificate Button - Only show if quiz passed */}
+                      {quizPassed && (
+                        <button
+                          onClick={handleViewCertificate}
+                          className="w-full flex items-center justify-center px-6 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all font-semibold shadow-lg hover:shadow-xl"
+                        >
+                          <Download className="w-5 h-5 mr-2" />
+                          {certificateGenerated ? "Download Certificate Again" : "Download Certificate"}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Close Button */}
+                <button
+                  onClick={() => setShowCompletionModal(false)}
+                  className="mt-4 px-6 py-3 text-gray-400 hover:text-white transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+
+              {/* Note */}
+              <p className="text-sm text-gray-500 mt-6">
+                💡 Pass the quiz with 70% or higher to earn your certificate
+              </p>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

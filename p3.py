@@ -282,88 +282,32 @@ class MonitorThread(threading.Thread):
                 self.last_face_time = time.time()
                 self.warning_shown = False
                 self.multiple_faces_warning_shown = False
-                
-                # Output JSON event for video mode
-                if '--video-mode' in sys.argv:
-                    event = {
-                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        "type": "face_detected",
-                        "face_count": 1,
-                        "message": "Student is watching"
-                    }
-                    print(json.dumps(event), flush=True)
-                
-                if 'status_label' in globals():
-                    status_label.config(text="Status: One face detected", foreground="green")
+                status_label.config(text="Status: One face detected", foreground="green")
                 
             elif self.face_count > 1:  # More than one face detected
-                if not self.multiple_faces_warning_shown:
-                    # Output JSON event
-                    if '--video-mode' in sys.argv:
-                        event = {
-                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                            "type": "warning",
-                            "face_count": self.face_count,
-                            "message": f"Multiple faces detected ({self.face_count})"
-                        }
-                        print(json.dumps(event), flush=True)
-                    
-                    if self.enable_notifications:
-                        notify_user("Warning", "Multiple faces detected! Only one person should be in front of the camera.")
+                if not self.multiple_faces_warning_shown and self.enable_notifications:
+                    notify_user("Warning", "Multiple faces detected! Only one person should be in front of the camera.")
                     self.multiple_faces_warning_shown = True
-                    
-                if 'status_label' in globals():
                     status_label.config(text="Status: Warning - Multiple faces detected", foreground="orange")
                     
             else:  # No faces detected
                 elapsed = time.time() - self.last_face_time
-                
-                if elapsed >= self.timeout - self.sensitivity and not self.warning_shown:
-                    # Output JSON event
-                    if '--video-mode' in sys.argv:
-                        event = {
-                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                            "type": "warning",
-                            "face_count": 0,
-                            "elapsed": int(elapsed),
-                            "message": f"No face detected for {int(elapsed)}s"
-                        }
-                        print(json.dumps(event), flush=True)
-                    
-                    if self.enable_notifications:
-                        notify_user("Warning", "No face detected. Locking soon...")
+                if elapsed >= self.timeout - self.sensitivity and not self.warning_shown and self.enable_notifications:
+                    notify_user("Warning", "No face detected. Locking soon...")
                     self.warning_shown = True
-                    
-                if 'status_label' in globals():
                     status_label.config(text=f"Status: Warning - No face detected ({int(elapsed)}s)", foreground="orange")
                 
                 if elapsed >= self.timeout:
-                    # Output JSON event
-                    if '--video-mode' in sys.argv:
-                        event = {
-                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                            "type": "alert",
-                            "face_count": 0,
-                            "elapsed": int(elapsed),
-                            "message": "Student not watching - timeout reached"
-                        }
-                        print(json.dumps(event), flush=True)
-                    else:
-                        # Only lock screen in non-video mode
-                        if self.enable_notifications:
-                            notify_user("Locking", "No face detected. Locking now.")
-                        if self.enable_sound and platform.system() == "Windows":
-                            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
-                        lock_screen()
-                    
+                    if self.enable_notifications:
+                        notify_user("Locking", "No face detected. Locking now.")
+                    if self.enable_sound and platform.system() == "Windows":
+                        winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+                    lock_screen()
                     self.last_face_time = time.time()
                     self.warning_shown = False
-                    
-                    if 'status_label' in globals():
-                        status_label.config(text="Status: Locked screen", foreground="red")
+                    status_label.config(text="Status: Locked screen", foreground="red")
                 else:
-                    if 'status_label' in globals():
-                        status_label.config(text=f"Status: No face detected ({int(elapsed)}s)", foreground="red")
+                    status_label.config(text=f"Status: No face detected ({int(elapsed)}s)", foreground="red")
 
             try:
                 cv2.imshow("Face Monitor Preview", frame_resized)
@@ -663,86 +607,16 @@ def create_gui():
     return root
 
 
-# -------------------- Video Monitoring Mode --------------------
-def video_monitoring_mode():
-    """Run in headless mode for video monitoring"""
-    import argparse
-    
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--session-id", type=str, help="Monitoring session ID")
-    parser.add_argument("--course-id", type=str, help="Course ID")
-    parser.add_argument("--lesson-id", type=str, help="Lesson ID")
-    parser.add_argument("--sensitivity", type=int, default=5, help="Sensitivity in seconds")
-    parser.add_argument("--timeout", type=int, default=10, help="Timeout in seconds")
-    parser.add_argument("--check-interval", type=float, default=1.0, help="Check interval")
-    
-    args, unknown = parser.parse_known_args()
-    
-    # Log session start
-    session_info = {
-        "session_id": args.session_id,
-        "course_id": args.course_id,
-        "lesson_id": args.lesson_id,
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "type": "session_start"
-    }
-    print(json.dumps(session_info), flush=True)
-    
-    # Create monitor thread without GUI
-    global monitor
-    monitor = MonitorThread(
-        sensitivity=args.sensitivity,
-        timeout=args.timeout,
-        preview_size=300,
-        check_interval=args.check_interval,
-        enable_notifications=True,
-        enable_sound=False  # Disable sound in video mode
-    )
-    
-    try:
-        monitor.start()
-        
-        # Keep running until interrupted
-        while monitor.is_alive():
-            time.sleep(1)
-            
-            # Output status periodically
-            if hasattr(monitor, 'face_count'):
-                status = {
-                    "session_id": args.session_id,
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    "type": "status",
-                    "face_count": monitor.face_count,
-                    "monitoring": monitor.running
-                }
-                print(json.dumps(status), flush=True)
-                
-    except KeyboardInterrupt:
-        print(json.dumps({
-            "session_id": args.session_id,
-            "type": "session_end",
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-        }), flush=True)
-    finally:
-        if monitor and monitor.is_alive():
-            monitor.stop()
-            monitor.join(timeout=2.0)
-
-
 # -------------------- Entry Point --------------------
 if __name__ == "__main__":
-    # Check for video monitoring mode
-    if "--video-mode" in sys.argv:
-        video_monitoring_mode()
-    else:
-        hidden_mode = "--hidden" in sys.argv
-        
-        # Create the GUI first
-        root = create_gui()
-        
-        if hidden_mode:
-            # Start monitoring and minimize to tray
-            start_monitoring()
-            minimize_to_tray()
-        
-        root.mainloop()
+    hidden_mode = "--hidden" in sys.argv
+    
+    # Create the GUI first
+    root = create_gui()
+    
+    if hidden_mode:
+        # Start monitoring and minimize to tray
+        start_monitoring()
+        minimize_to_tray()
+    
+    root.mainloop()
